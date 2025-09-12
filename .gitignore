@@ -15,6 +15,17 @@ pnpm-debug.log*
 # env files
 .env
 .env.*.local
+.venv/
+.venv/*
+.venv
+
+# data
+ML/data
+
+# frontend
+frontend/node_modules/
+frontend/node_modules/*
+frontend/node_modules
 
 # cache / misc
 *.tsbuildinfo
