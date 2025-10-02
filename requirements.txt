@@ -16,3 +16,7 @@ torch
 torchvision
 tqdm
 tensorflow.keras
+pandas
+numpy
+scikit-learn
+opencv-python
