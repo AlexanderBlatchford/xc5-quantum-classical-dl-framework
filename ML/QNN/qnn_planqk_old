@@ -1,0 +1,91 @@
+import argparse
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+
+from qiskit import QuantumCircuit
+from qiskit.circuit.library import RealAmplitudes, ZZFeatureMap
+from qiskit_machine_learning.algorithms.classifiers import VQC
+from qiskit_machine_learning.optimizers import COBYLA
+from qiskit_algorithms.utils import algorithm_globals
+from qiskit.primitives import Sampler
+
+
+def build_vqc(n_qubits: int, num_classes: int):
+    feature_map = ZZFeatureMap(feature_dimension=n_qubits, reps=2)
+    ansatz = RealAmplitudes(num_qubits=n_qubits, reps=2)
+
+    optimizer = COBYLA(maxiter=100)
+
+    vqc = VQC(
+        feature_map=feature_map,
+        ansatz=ansatz,
+        optimizer=optimizer,
+        sampler=Sampler(),
+    )
+    return vqc
+
+
+def main(args):
+    algorithm_globals.random_seed = 42
+
+    # Load dataset
+    df = pd.read_csv(args.data)
+
+    # target column (name or index)
+    if args.target.isdigit():
+        target_col = int(args.target)
+        y = df.iloc[:, target_col]
+        X = df.drop(df.columns[target_col], axis=1)
+    else:
+        y = df[args.target]
+        X = df.drop(columns=[args.target])
+
+    # Encode labels
+    le = LabelEncoder()
+    y_enc = le.fit_transform(y)
+
+    # Scale features
+    X = StandardScaler().fit_transform(X)
+
+    # Reduce dimensionality to n_qubits
+    if X.shape[1] > args.n_qubits:
+        pca = PCA(n_components=args.n_qubits)
+        X = pca.fit_transform(X)
+    elif X.shape[1] < args.n_qubits:
+        # Pad with zeros if fewer features
+        pad = np.zeros((X.shape[0], args.n_qubits - X.shape[1]))
+        X = np.hstack((X, pad))
+
+    # Train-test split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y_enc, test_size=0.2, random_state=42, stratify=y_enc
+    )
+
+    # Build model
+    vqc = build_vqc(args.n_qubits, num_classes=len(np.unique(y_enc)))
+
+    # Train
+    print("Training VQC...")
+    vqc.fit(X_train, y_train)
+
+    # Evaluate
+    y_pred = vqc.predict(X_test)
+    acc = accuracy_score(y_test, y_pred)
+
+    print(f"\nAccuracy: {acc:.4f}")
+    print("\nConfusion Matrix:\n", confusion_matrix(y_test, y_pred))
+    print("\nClassification Report:\n", classification_report(y_test, y_pred))
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="VQC with Qiskit")
+    parser.add_argument("--data", type=str, required=True, help="Path to CSV file")
+    parser.add_argument("--target", type=str, required=True, help="Target column (name or index)")
+    parser.add_argument("--n_qubits", type=int, default=4, help="Number of qubits (features)")
+    args = parser.parse_args()
+
+    main(args)
