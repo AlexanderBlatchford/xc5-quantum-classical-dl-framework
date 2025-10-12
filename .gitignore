@@ -1,42 +1,33 @@
-# --- Frontend (Vite/React/Tailwind) ---
-node_modules/
-node_modules/*
-dist/
-build/
-
-# env files (don’t commit secrets)
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# editors/OS
-.vscode/
-.idea/
+﻿# ---- OS / editor
 .DS_Store
 Thumbs.db
-*.sw?
+*.swp
+*.swo
+.vscode/
+.idea/
 
-# --- Python backend (if present) ---
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-*.so
-*.egg-info/
-.python-version
-.venv/
-venv/
-env/
-.mypy_cache/
-.pytest_cache/
-.coverage
-htmlcov/
-.ipynb_checkpoints/
+# ---- Python
+backend/.venv/
+backend/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.coverage
+backend/coverage.xml
+backend/.env
+backend/*.log
+
+# ---- Node / Vite
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+frontend/.env
+frontend/*.log
+npm-debug.log*
+yarn-error.log*
+
+# ---- Data / artifacts
+data/
+datasets/
+*.csv
+*.tsv
