@@ -7,6 +7,7 @@ from scipy.stats import zscore
 import os
 import cv2
 
+
 class DatasetAnalyzer:
     def __init__(self, data, target=None, data_type="tabular", sample_size=50):
         self.data = data
@@ -30,16 +31,13 @@ class DatasetAnalyzer:
     def _analyze_tabular(self):
         df = self.data
         n_samples, n_features = df.shape
-
         categorical_cols = df.select_dtypes(include=["object", "category"]).columns
         numeric_cols = df.select_dtypes(include=["number"]).columns
 
-        # Encode categorical data
         df_encoded = df.copy()
         for col in categorical_cols:
             df_encoded[col] = LabelEncoder().fit_transform(df_encoded[col].astype(str))
 
-        # ----- 1. PCA for dimensionality -----
         explained_var = 0
         if len(numeric_cols) > 1:
             try:
@@ -49,7 +47,6 @@ class DatasetAnalyzer:
             except Exception:
                 pass
 
-        # ----- 2. Mutual Information -----
         avg_mi = 0
         if self.target and self.target in df.columns:
             y = df[self.target]
@@ -61,17 +58,10 @@ class DatasetAnalyzer:
             except Exception:
                 pass
 
-        # ----- 3. Noise and Consistency -----
         noise_score = self._estimate_noise(df_encoded[numeric_cols]) if len(numeric_cols) > 0 else 0
         consistency_score = 1 - noise_score
-
-        # ----- 4. Correlation Redundancy -----
         corr_redundancy = self._correlation_redundancy(df_encoded[numeric_cols]) if len(numeric_cols) > 1 else 0
-
-        # ----- 5. Missing Data -----
         missing_ratio = df.isna().sum().sum() / (n_samples * n_features)
-
-        # ----- 6. Outlier Fraction -----
         outlier_fraction = self._outlier_fraction(df_encoded[numeric_cols]) if len(numeric_cols) > 0 else 0
 
         self.analysis = {
@@ -92,7 +82,7 @@ class DatasetAnalyzer:
     # ========== IMAGE ANALYSIS ==========
     def _analyze_image(self):
         image_dir = self.data
-        files = [f for f in os.listdir(image_dir) if f.lower().endswith(('.png','.jpg','.jpeg'))]
+        files = [f for f in os.listdir(image_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
         if not files:
             self.analysis = {"type": "image", "n_samples": 0}
             return
@@ -126,23 +116,18 @@ class DatasetAnalyzer:
         }
 
     def _analyze_video(self):
-        self.analysis = {
-            "type": "video",
-            "note": "Video analysis not yet implemented"
-        }
+        self.analysis = {"type": "video", "note": "Video analysis not yet implemented"}
 
-    # ========== HELPER FUNCTIONS ==========
+    # ========== HELPERS ==========
     def _estimate_noise(self, df_num):
-        """Estimate data noise using variance of z-scores."""
         try:
             z = np.abs(zscore(df_num))
             noise = np.mean(np.std(z, axis=0))
-            return min(noise / 5, 1)  # normalize to [0,1]
+            return min(noise / 5, 1)
         except Exception:
             return 0
 
     def _correlation_redundancy(self, df_num):
-        """Estimate redundancy (high correlations between features)."""
         corr = df_num.corr().abs()
         upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
         redundant = (upper > 0.8).sum().sum()
@@ -150,7 +135,6 @@ class DatasetAnalyzer:
         return redundancy_ratio
 
     def _outlier_fraction(self, df_num):
-        """Simple outlier ratio based on z-score threshold."""
         z = np.abs(zscore(df_num))
         return np.mean(z > 3)
 
@@ -159,7 +143,6 @@ class DatasetAnalyzer:
 class ModelSelector:
     def __init__(self, analysis, thresholds=None):
         self.analysis = analysis
-        # Allow user to tweak thresholds easily
         self.thresholds = thresholds or {
             "high_dim": 50,
             "high_sample": 10000,
@@ -170,8 +153,10 @@ class ModelSelector:
 
     def recommend(self):
         dtype = self.analysis["type"]
+        scores = {m: 0.0 for m in ["mlp", "cnn", "svm", "vqc", "qkernel", "qnn"]}
         rationale = []
 
+        # ========== TABULAR ==========
         if dtype == "tabular":
             n_features = self.analysis["n_features"]
             n_samples = self.analysis["n_samples"]
@@ -180,45 +165,54 @@ class ModelSelector:
             missing = self.analysis["missing_ratio"]
             explained = self.analysis["explained_var_pca"]
 
-            if n_features < self.thresholds["high_dim"] and mi > self.thresholds["high_mi"]:
-                model = "MLP"
-                rationale.append("Low feature dimensionality with good mutual information.")
-            elif explained > 0.7 and noise < self.thresholds["low_noise"]:
-                model = "Autoencoder (AEC)"
-                rationale.append("High PCA explained variance and consistent features.")
-            elif n_samples > self.thresholds["high_sample"]:
-                model = "MLP or QNN"
-                rationale.append("Large dataset suitable for classical or hybrid models.")
-            elif noise > 0.5 or missing > self.thresholds["low_missing"]:
-                model = "Tree-based (Random Forest / XGBoost)"
-                rationale.append("Data shows high noise or missingness, tree models handle this well.")
-            else:
-                model = "Quantum Convolutional Network (QCN)"
-                rationale.append("Moderate structure and small size, good for quantum exploration.")
+            # scoring logic
+            scores["svm"] += 0.6 if n_samples < 500 else 0.2
+            scores["mlp"] += 0.8 if n_features < self.thresholds["high_dim"] else 0.4
+            scores["mlp"] += 0.2 if noise < self.thresholds["low_noise"] else 0
+            scores["qkernel"] += 0.7 if noise > 0.5 or missing > self.thresholds["low_missing"] else 0.3
+            scores["vqc"] += 0.6 if explained > 0.7 else 0.2
+            scores["qnn"] += 0.7 if n_samples > self.thresholds["high_sample"] else 0.3
 
-            confidence = round(1 - min(noise, 0.9), 2)
-            return {"recommended_model": model, "confidence": confidence, "rationale": rationale}
+            rationale.append("Model scores computed from data dimensionality, noise, and structure.")
 
+        # ========== IMAGE ==========
         elif dtype == "image":
-            if self.analysis["avg_height"] > 28 and self.analysis["avg_width"] > 28:
-                model = "CNN"
-                rationale = ["Image size indicates spatial features; CNN recommended."]
+            h, w = self.analysis["avg_height"], self.analysis["avg_width"]
+            if h > 28 and w > 28:
+                scores["cnn"] += 0.9
+                scores["mlp"] += 0.5
             else:
-                model = "MLP"
-                rationale = ["Small flat images suitable for simple feedforward networks."]
-            return {"recommended_model": model, "confidence": 0.9, "rationale": rationale}
+                scores["mlp"] += 0.8
+                scores["cnn"] += 0.4
+            scores["vqc"] += 0.4
+            rationale.append("Image size used to favor CNNs for spatial structure.")
 
+        # ========== VIDEO ==========
         elif dtype == "video":
-            return {
-                "recommended_model": "3D CNN or CNN + RNN",
-                "confidence": 0.8,
-                "rationale": ["Temporal and spatial data suggest CNN–RNN hybrid."]
-            }
+            scores["qnn"] = 0.9
+            scores["cnn"] = 0.6
+            rationale.append("Video data benefits from temporal-spatial modeling — QNN favored.")
 
-        else:
-            return {"recommended_model": "Unknown", "confidence": 0.0, "rationale": ["Unsupported type."]}
+        # normalize
+        max_score = max(scores.values()) or 1
+        for k in scores:
+            scores[k] = round(scores[k] / max_score, 2)
+
+        # rank and colorize
+        ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        result = []
+        for i, (model, score) in enumerate(ranked):
+            color = "green" if i == 0 else "yellow" if i == 1 else "red"
+            result.append({
+                "model": model,
+                "score": score,
+                "color": color
+            })
+
+        return {"ranked_models": result, "rationale": rationale}
 
 
+# =====================================================================
 if __name__ == "__main__":
     df = pd.DataFrame({
         "age": [23, 45, 31, 35, 62],
@@ -233,4 +227,6 @@ if __name__ == "__main__":
 
     selector = ModelSelector(analysis)
     result = selector.recommend()
-    print("Recommendation:", result)
+    print("\nRanked Models:")
+    for r in result["ranked_models"]:
+        print(f"{r['color'].upper():<6} | {r['model']} (score={r['score']})")
